@@ -45,7 +45,7 @@ def initialize_state(width, height) -> State:
         right_pad_vel=np.array([0.0, 0.0], dtype=np.float32), 
         pad_size=np.array([10, 50], dtype=np.float32),
         score=0,
-        pid_controller=PIDController(0.1, 0.05, 0.0)
+        pid_controller=PIDController(0.4, 0.05, 0.0)
     )
 def process_physics(state: State, dt: float, width, height) -> Tuple[State, bool]:
     new_ball_pos = state.ball_pos + state.ball_vel * dt

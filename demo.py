@@ -36,7 +36,7 @@ def render(height, width, state:State):
     return canvas
 
 
-actor_main = torch.load("checkpoints/0000156604_actor_0.6839557886123657.pt", weights_only=False)
+actor_main = torch.load("checkpoints/actor_15.875.pt", weights_only=False)
 actor_main.eval()
 
 state = initialize_state(W_WIDTH, W_HEIGHT)
@@ -56,7 +56,7 @@ while not done_demo:
     state.left_pad_vel[1] = action * PADDLE_VELOCITY_MAX
     state = update_pid(state)
     
-    reward_ = reward_function(state, False, False)
+    reward_ = reward_function(state)
 
     img = render(W_WIDTH, W_HEIGHT, state)
     overlay = img.copy()
@@ -77,3 +77,8 @@ while not done_demo:
 cv2.destroyAllWindows()
 
 
+
+
+# 
+# use previous states in model (with its actions )
+# use threads to fill replay bffer 

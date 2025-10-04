@@ -10,7 +10,9 @@ MAX_Y = W_HEIGHT
 MAX_X = W_WIDTH
 PADDLE_VELOCITY_MAX = MAX_VELOCITY
 
-DEMO_EACH = 300
+DEMO_EACH = 350
+
+
 
 HIDDEN_DIM = 64
 PREOUTPUT_DIM = 64
@@ -18,11 +20,20 @@ PREOUTPUT_DIM = 64
 from pingpong import State
 import numpy as np
 
-def reward_function(state: State, hit_ball: bool, missed_ball: bool):
-    paddle_y_norm = state.left_pad_pos[1] / MAX_Y
-    ball_y_norm = state.ball_pos[1] / MAX_Y
-    
-    x = paddle_y_norm - ball_y_norm
-    y_reward = 10 * (-np.abs(np.tanh(x*x) * 6 * np.cos(x))) + 1
-    y_reward += state.score * 5
-    return  y_reward 
+def reward_function(state: State):
+    # since in replay buffer we capturing not sequences of actions but actions itself... 
+    # in needs some constant reward even if no hit. 
+    ball_x = state.ball_pos[0] / MAX_X
+    reward = 0
+    # stay still when possible 
+    if 0.5 < ball_x < 1.0 and state.ball_vel[0] < 0 or state.ball_vel[0] > 0: 
+        reward += -np.abs(state.right_pad_vel[1]) / MAX_VELOCITY * 2
+
+    # award nearly-hitting the ball. 
+    if np.abs(state.left_pad_pos[0] - state.ball_pos[0]) < state.pad_size[0]:
+        if state.left_pad_pos[1] + state.pad_size[1]//6  < state.ball_pos[1] <   state.left_pad_pos[1]  + state.pad_size[1] -   state.pad_size[1]//6:
+            reward += 15
+            reward += np.abs((state.left_pad_vel[1] / MAX_VELOCITY) * 10)
+
+
+    return  reward 
