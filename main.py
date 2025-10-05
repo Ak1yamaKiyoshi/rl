@@ -9,47 +9,49 @@ import numpy as np
 from torch import nn 
 
 
-def make_demo(actor, noise_scale):
+def make_demo(actor, noise_scale, device):
     state = initialize_state(W_WIDTH, W_HEIGHT)
     for _ in range(4):
         done_demo = False
         buffer = ObservationBuffer([])
         buffer.initialize()
-
         while not done_demo:
             state, done_demo = process_physics(state, NN_DT, W_WIDTH, W_HEIGHT)
             buffer.add(create_observation(state, "left"))
-
-            obs_tensor = buffer.to_tensor()
+            obs_tensor = buffer.to_tensor().to(device)
+            
             with torch.no_grad():
                 action = actor(obs_tensor).item()
             
             state.left_pad_vel[1] = action * PADDLE_VELOCITY_MAX
             state = update_pid(state)
             reward_ = reward_function(state)
+            
             img = render(W_WIDTH, W_HEIGHT, state)
-
             overlay = img.copy()
             cv2.rectangle(overlay, (0, 0), (W_WIDTH, 120), (0, 0, 0), -1)
             img = cv2.addWeighted(overlay, 0.6, img, 0.4, 0)
-            cv2.putText(img, f"DEMO MODE", (10, 20), 
+            
+            cv2.putText(img, f"DEMO MODE", (10, 20),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-            cv2.putText(img, f"Action: {action:+.3f}", (10, 50), 
+            cv2.putText(img, f"Action: {action:+.3f}", (10, 50),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 200, 0), 1)
-            cv2.putText(img, f"Reward: {reward_:.2f}", (10, 75), 
+            cv2.putText(img, f"Reward: {reward_:.2f}", (10, 75),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(img, f"Noise: {noise_scale:.4f}", (10, 100), 
+            cv2.putText(img, f"Noise: {noise_scale:.4f}", (10, 100),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
             
             cv2.imshow("Training", img)
             key = cv2.waitKey(12)
+            
             if key == ord('q') or state.score > 15:
                 cv2.destroyAllWindows()
                 return
+    
     cv2.destroyAllWindows()
 
 
-def evaluate_actor(actor, num_games=100):
+def evaluate_actor(actor, num_games=100, device='cpu'):
     total_score = 0
     
     for game in range(num_games):
@@ -61,8 +63,8 @@ def evaluate_actor(actor, num_games=100):
         while not done:
             state, done = process_physics(state, NN_DT, W_WIDTH, W_HEIGHT)
             buffer.add(create_observation(state, "left"))
+            obs_tensor = buffer.to_tensor().to(device)  
             
-            obs_tensor = buffer.to_tensor()
             with torch.no_grad():
                 action = actor(obs_tensor).item()
             
@@ -76,13 +78,14 @@ def evaluate_actor(actor, num_games=100):
         total_score += state.score
     
     return total_score / num_games
-
-
 if __name__ == "__main__":     
     try:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {device}")
+
         torch.set_num_threads(12)
         torch.set_flush_denormal(True)
-        
+
         torch.serialization.add_safe_globals([
             Actor, 
             Critic,
@@ -93,12 +96,12 @@ if __name__ == "__main__":
             nn.BatchNorm1d,
         ])
 
-        actor_main = Actor()
-        actor_target = Actor()
+        actor_main = Actor().to(device)
+        actor_target = Actor().to(device)
         actor_target.load_state_dict(actor_main.state_dict())
-        
-        critic_main = Critic()
-        critic_target = Critic()
+
+        critic_main = Critic().to(device)
+        critic_target = Critic().to(device)
         critic_target.load_state_dict(critic_main.state_dict())
 
         actor_optimizer = torch.optim.Adam(actor_main.parameters(), lr=1e-4)
@@ -112,24 +115,24 @@ if __name__ == "__main__":
         for param in critic_target.parameters():
             param.requires_grad = False
 
-        buffer = ReplayBuffer(capacity=1_000_000)
+        buffer = ReplayBuffer(capacity=1_000_000, device=device)
         state = initialize_state(W_WIDTH, W_HEIGHT)
 
         noise_scale = 0.5
         noise_decay = 0.9995
         min_noise = 0.01
-        
+
         episode_count = 0
         best_eval_score = 0
-        
+
         observation_buffer = ObservationBuffer([])
         observation_buffer.initialize()
-        
+
         print(f"Initial noise scale: {noise_scale}")
-        
+
         for step in range(1_000_000_000):
             observation_buffer.add(create_observation(state, 'left'))
-            obs_tensor = observation_buffer.to_tensor()
+            obs_tensor = observation_buffer.to_tensor().to(device)
 
             with torch.no_grad():
                 action = actor_main(obs_tensor).item()
@@ -158,14 +161,15 @@ if __name__ == "__main__":
                         buffer, critic_target, critic_main, 
                         actor_main, actor_target, 
                         actor_optimizer, critic_optimizer, 
-                        batch_size=TRAIN_BATCH_SIZE
+                        batch_size=TRAIN_BATCH_SIZE,
+                        device=device 
                     )
                     
                     if losses[0] is not None and step % 100 == 0:
                         current_lr = actor_optimizer.param_groups[0]['lr']
 
                         print(f"Step {step:7d} | C-Loss: {losses[0]:6.3f} | "
-                              f"A-Loss: {losses[1]:7.3f} | Lr: {current_lr} | Noise: {noise_scale:.4f}")
+                            f"A-Loss: {losses[1]:7.3f} | Lr: {current_lr} | Noise: {noise_scale:.4f}")
 
                 next_state = update_pid(next_state)
                 state = next_state
@@ -179,10 +183,10 @@ if __name__ == "__main__":
                 
                 episode_count += 1
                 print(f"[Episode {episode_count:4d}] Score: {state.score:2d} | "
-                      f"Noise: {noise_scale:.4f} Reward: {reward}")
+                    f"Noise: {noise_scale:.4f} Reward: {reward}")
 
                 if episode_count % DEMO_EACH == 0:
-                    make_demo(actor_main, noise_scale)
+                    make_demo(actor_main, noise_scale, device=device)  
                 
                 if episode_count % EVAL_EACH == 0:
                     actor_main.eval()
@@ -202,6 +206,8 @@ if __name__ == "__main__":
                 state = initialize_state(W_WIDTH, W_HEIGHT)
                 
                 noise_scale = max(min_noise, noise_scale * noise_decay)
+
+
                 
     except KeyboardInterrupt:
         print("\n\nTraining interrupted by user")

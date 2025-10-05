@@ -142,22 +142,22 @@ class ReplayBuffer:
         self._next_states[idx] = torch.as_tensor(next_state, dtype=torch.float32)
         self._dones[idx, 0] = float(done)
         
-        
         self._id = (self._id + 1) % self._capacity
         self._size = min(self._size + 1, self._capacity)
  
     def sample(self, batch_size):
         indices = torch.randint(0, self._size, (batch_size,))
+        
         return (
-            self._states[indices].to(self._device),
-            self._actions[indices].to(self._device),
-            self._rewards[indices].to(self._device),
-            self._next_states[indices].to(self._device),
-            self._dones[indices].to(self._device)
+            self._states[indices],
+            self._actions[indices],
+            self._rewards[indices],
+            self._next_states[indices],
+            self._dones[indices]
         )
+
     def __len__(self):
         return self._size
-
 
 def create_observation(state: State, which_paddle: str,) -> ObservationBuffer:
     if which_paddle == "left":
@@ -176,16 +176,27 @@ def create_observation(state: State, which_paddle: str,) -> ObservationBuffer:
         ball_y_distance_to_paddle=float(state.ball_pos[1] - paddle_pos[1]),
     )
 
-def train_step(buffer, critic_target, critic_main, actor_main, actor_target, actor_optimizer, critic_optimizer, batch_size=64, gamma=0.98, tau=0.003):
+
+
+def train_step(buffer, critic_target, critic_main, actor_main, actor_target, 
+               actor_optimizer, critic_optimizer, batch_size=64, gamma=0.98, 
+               tau=0.003, device='cpu'):
     if len(buffer) < batch_size:
         return None, None
+    
     states, actions, rewards, next_states, dones = buffer.sample(batch_size)
+    
+    states = states.to(device)
+    actions = actions.to(device)
+    rewards = rewards.to(device)
+    next_states = next_states.to(device)
+    dones = dones.to(device)
     
     with torch.no_grad():
         next_actions = actor_target(next_states)
         target_q = critic_target(next_states, next_actions)
         y = rewards + gamma * target_q * (1 - dones)
-
+    
     current_q = critic_main(states, actions)
     critic_loss = nn.MSELoss()(current_q, y)
     
@@ -207,4 +218,3 @@ def train_step(buffer, critic_target, critic_main, actor_main, actor_target, act
         target_param.data.copy_(tau * main_param.data + (1 - tau) * target_param.data)
     
     return critic_loss.item(), actor_loss.item()
-
