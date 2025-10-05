@@ -7,22 +7,18 @@ from config import *
 from pid import PIDController
 from typing import Tuple
 
-
 @dataclass
 class State:
     ball_pos: np.ndarray # center
     ball_vel: np.ndarray
-    
     left_pad_pos: np.ndarray # center
     left_pad_vel: np.ndarray
-
     right_pad_pos: np.ndarray # center
     right_pad_vel: np.ndarray
-
     score: int
     pad_size: np.ndarray 
     pid_controller: PIDController
-    observations = []
+
 
 def initialize_state(width, height) -> State:
     pads_y = height // 2 

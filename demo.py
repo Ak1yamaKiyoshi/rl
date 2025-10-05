@@ -78,7 +78,5 @@ cv2.destroyAllWindows()
 
 
 
-
-# 
 # use previous states in model (with its actions )
 # use threads to fill replay bffer 
