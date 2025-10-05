@@ -256,7 +256,7 @@ if __name__ == "__main__":
                     )
                     actor_main.train()
 
-                    eval_score = avg_score * avg_reward
+                    eval_score = avg_score * 1000 + avg_reward
 
                     print(f"Evaluation score: {eval_score:.2f}")
 
