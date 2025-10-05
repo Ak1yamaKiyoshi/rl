@@ -14,10 +14,10 @@ def add_noise(action, noise_scale):
     return np.clip(action + noise, -PADDLE_VELOCITY_MAX, PADDLE_VELOCITY_MAX)
 
 
-@dataclass 
+@dataclass
 class Observation:
-    ball_vx: float          
-    ball_vy: float          
+    ball_vx: float
+    ball_vy: float
 
     paddle_vy: float
     paddle_y: float
@@ -26,14 +26,16 @@ class Observation:
     ball_y_distance_to_paddle: float
 
     def to_array(self) -> np.ndarray:
-        return np.array([
-            self.ball_vx / MAX_VELOCITY,           # 0
-            self.ball_vy / MAX_VELOCITY,           # 1
-            self.paddle_vy / MAX_VELOCITY,         # 2
-            self.paddle_y / MAX_Y,                 # 3
-            self.ball_x_distance_to_paddle / MAX_X, # 4
-            self.ball_y_distance_to_paddle / MAX_Y, # 5
-        ])
+        return np.array(
+            [
+                self.ball_vx / MAX_VELOCITY,  # 0
+                self.ball_vy / MAX_VELOCITY,  # 1
+                self.paddle_vy / MAX_VELOCITY,  # 2
+                self.paddle_y / MAX_Y,  # 3
+                self.ball_x_distance_to_paddle / MAX_X,  # 4
+                self.ball_y_distance_to_paddle / MAX_Y,  # 5
+            ]
+        )
 
 
 @dataclass
@@ -42,27 +44,28 @@ class ObservationBuffer:
 
     def initialize(self):
         for i in range(NN_OBSERVATIONS):
-            self.observations.append(Observation(
-                ball_vx=0.0, 
-                ball_vy=0.0, 
-                paddle_vy=0.0, 
-                paddle_y=MAX_Y/2,
-                ball_x_distance_to_paddle=0.0,  
-                ball_y_distance_to_paddle=0.0, 
-            ))
+            self.observations.append(
+                Observation(
+                    ball_vx=0.0,
+                    ball_vy=0.0,
+                    paddle_vy=0.0,
+                    paddle_y=MAX_Y / 2,
+                    ball_x_distance_to_paddle=0.0,
+                    ball_y_distance_to_paddle=0.0,
+                )
+            )
 
     def add(self, observation):
         self.observations.pop(0)
         self.observations.append(observation)
-    
+
     def to_numpy(self):
         return np.array([i.to_array() for i in self.observations]).flatten()
 
-
     def to_tensor(self):
         return torch.FloatTensor(self.to_numpy()).flatten()
-    
-    def copy(self) -> 'ObservationBuffer':
+
+    def copy(self) -> "ObservationBuffer":
         return deepcopy(self)
 
 
@@ -78,11 +81,11 @@ class Actor(nn.Module):
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, 1),
-            nn.Tanh()
+            nn.Tanh(),
         )
-        
+
         self._initialize_weights()
-    
+
     def _initialize_weights(self):
         for module in self.fwd:
             if isinstance(module, nn.Linear):
@@ -120,20 +123,21 @@ class Critic(nn.Module):
         x = torch.cat([state, action], dim=-1)
         return self.fwd(x)
 
+
 class ReplayBuffer:
-    def __init__(self, capacity=1_000_000, state_dim=NN_INPUT_SHAPE, device='cpu'):
+    def __init__(self, capacity=1_000_000, state_dim=NN_INPUT_SHAPE, device="cpu"):
         self._capacity = capacity
         self._device = device
-        
+
         self._states = torch.zeros((capacity, state_dim), dtype=torch.float32)
         self._actions = torch.zeros((capacity, 1), dtype=torch.float32)
         self._rewards = torch.zeros((capacity, 1), dtype=torch.float32)
         self._next_states = torch.zeros((capacity, state_dim), dtype=torch.float32)
         self._dones = torch.zeros((capacity, 1), dtype=torch.float32)
-        
+
         self._id = 0
         self._size = 0
-    
+
     def add(self, state, action, reward, next_state, done):
         idx = self._id
         self._states[idx] = torch.as_tensor(state, dtype=torch.float32)
@@ -141,32 +145,36 @@ class ReplayBuffer:
         self._rewards[idx, 0] = float(reward)
         self._next_states[idx] = torch.as_tensor(next_state, dtype=torch.float32)
         self._dones[idx, 0] = float(done)
-        
+
         self._id = (self._id + 1) % self._capacity
         self._size = min(self._size + 1, self._capacity)
- 
+
     def sample(self, batch_size):
         indices = torch.randint(0, self._size, (batch_size,))
-        
+
         return (
             self._states[indices],
             self._actions[indices],
             self._rewards[indices],
             self._next_states[indices],
-            self._dones[indices]
+            self._dones[indices],
         )
 
     def __len__(self):
         return self._size
 
-def create_observation(state: State, which_paddle: str,) -> ObservationBuffer:
+
+def create_observation(
+    state: State,
+    which_paddle: str,
+) -> ObservationBuffer:
     if which_paddle == "left":
         paddle_pos = state.left_pad_pos
         paddle_vel = state.left_pad_vel
     else:
         paddle_pos = state.right_pad_pos
         paddle_vel = state.right_pad_vel
-    
+
     return Observation(
         ball_vx=float(state.ball_vel[0]),
         ball_vy=float(state.ball_vel[1]),
@@ -177,44 +185,57 @@ def create_observation(state: State, which_paddle: str,) -> ObservationBuffer:
     )
 
 
-
-def train_step(buffer, critic_target, critic_main, actor_main, actor_target, 
-               actor_optimizer, critic_optimizer, batch_size=64, gamma=0.98, 
-               tau=0.003, device='cpu'):
+def train_step(
+    buffer,
+    critic_target,
+    critic_main,
+    actor_main,
+    actor_target,
+    actor_optimizer,
+    critic_optimizer,
+    batch_size=64,
+    gamma=0.98,
+    tau=0.003,
+    device="cpu",
+):
     if len(buffer) < batch_size:
         return None, None
-    
+
     states, actions, rewards, next_states, dones = buffer.sample(batch_size)
-    
+
     states = states.to(device)
     actions = actions.to(device)
     rewards = rewards.to(device)
     next_states = next_states.to(device)
     dones = dones.to(device)
-    
+
     with torch.no_grad():
         next_actions = actor_target(next_states)
         target_q = critic_target(next_states, next_actions)
         y = rewards + gamma * target_q * (1 - dones)
-    
+
     current_q = critic_main(states, actions)
     critic_loss = nn.MSELoss()(current_q, y)
-    
+
     critic_optimizer.zero_grad()
     critic_loss.backward()
     critic_optimizer.step()
-    
+
     actor_actions = actor_main(states)
     actor_loss = -critic_main(states, actor_actions).mean()
-    
+
     actor_optimizer.zero_grad()
     actor_loss.backward()
     actor_optimizer.step()
-    
-    for target_param, main_param in zip(actor_target.parameters(), actor_main.parameters()):
+
+    for target_param, main_param in zip(
+        actor_target.parameters(), actor_main.parameters()
+    ):
         target_param.data.copy_(tau * main_param.data + (1 - tau) * target_param.data)
-    
-    for target_param, main_param in zip(critic_target.parameters(), critic_main.parameters()):
+
+    for target_param, main_param in zip(
+        critic_target.parameters(), critic_main.parameters()
+    ):
         target_param.data.copy_(tau * main_param.data + (1 - tau) * target_param.data)
-    
+
     return critic_loss.item(), actor_loss.item()
