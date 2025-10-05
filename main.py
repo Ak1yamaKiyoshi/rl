@@ -190,7 +190,7 @@ if __name__ == "__main__":
                 
                 if episode_count % EVAL_EACH == 0:
                     actor_main.eval()
-                    eval_score = evaluate_actor(actor_main, num_games=100)
+                    eval_score = evaluate_actor(actor_main, num_games=100, device=device)
                     actor_main.train()
                     
                     print(f"Evaluation score: {eval_score:.2f}")
