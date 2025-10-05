@@ -149,16 +149,16 @@ if __name__ == "__main__":
         # for no cuda: 
         # map_location=torch.device('cpu')
 
-        actor_main = torch.load("checkpoints/actor_10.00.pt").to(device)
+        actor_main = torch.load("checkpoints/noneednomove_actor_85755.44.pt", map_location=torch.device('cpu')).to(device)
         actor_target = Actor().to(device)
         actor_target.load_state_dict(actor_main.state_dict())
 
-        critic_main = torch.load("checkpoints/critic_10.00.pt").to(device)
+        critic_main = torch.load("checkpoints/noneednomove_critic_85755.44.pt", map_location=torch.device('cpu')).to(device)
         critic_target = Critic().to(device)
         critic_target.load_state_dict(critic_main.state_dict())
 
-        actor_optimizer = torch.optim.Adam(actor_main.parameters(), lr=1e-4)
-        critic_optimizer = torch.optim.Adam(critic_main.parameters(), lr=1e-4)
+        actor_optimizer = torch.optim.Adam(actor_main.parameters(), lr=1e-5)
+        critic_optimizer = torch.optim.Adam(critic_main.parameters(), lr=1e-5)
 
         actor_target.eval()
         critic_target.eval()
@@ -172,7 +172,7 @@ if __name__ == "__main__":
         state = initialize_state(W_WIDTH, W_HEIGHT)
 
         noise_scale = 0.5
-        noise_decay = 0.995
+        noise_decay = 0.95
         min_noise = 0.01
 
         episode_count = 0
