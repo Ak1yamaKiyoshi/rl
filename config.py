@@ -22,6 +22,8 @@ TRAIN_EVERY = 2
 TRAIN_BATCH_SIZE = 128
 
 
+EXPNAME = "noneednomove"
+
 def reward_function(state):
     reward = 0
 
@@ -52,32 +54,48 @@ def reward_function(state):
     distance_from_center = abs(pad_y - center_y)
     distance_from_center_normalized = distance_from_center / (MAX_Y / 2)
 
-    if state.ball_vel[0] < 0 and ball_x_normalized < 0.3:
-        reward += 5
+    well_positioned = y_distance < pad_height * 1.5
 
-        if ball_in_pad_range:
-            center_distance = abs(ball_y - pad_y)
-            quarter_pad = pad_height / 4
+    if state.ball_vel[0] < 0 and ball_x_normalized < 0.3 and ball_in_pad_range:
+        reward += 5 
 
-            if center_distance < quarter_pad:
-                if center_distance < pad_height / 16:
-                    reward += 15
-                else:
-                    reward += 10
+        center_distance = abs(ball_y - pad_y)
+        quarter_pad = pad_height / 4
 
-    if not ball_in_pad_range:
+        if center_distance < quarter_pad:
+            if center_distance < pad_height / 16:
+                reward += 15
+            else:
+                reward += 10
+        
+        if well_positioned:
+            reward -= paddle_speed_normalized * 12
+
+    if state.ball_vel[0] < 0 and ball_x_normalized < 0.3 and not ball_in_pad_range:
         reward -= y_distance_normalized * 10
+        
+        if not well_positioned:
+            reward -= paddle_speed_normalized * 2
+        else:
+            reward -= paddle_speed_normalized * 15
 
     if state.ball_vel[0] > 0:
-        reward -= paddle_speed_normalized * 15
+        reward -= paddle_speed_normalized * 20
 
         center_bonus = (1 - distance_from_center_normalized) * 3
         reward += center_bonus
+        
         if distance_from_center_normalized > 0.3:
             reward -= distance_from_center_normalized * 5
 
-    if ball_x_normalized < 0.2 and state.ball_vel[0] < 0:
-        reward -= paddle_speed_normalized * 2
+    if state.ball_vel[0] < 0 and ball_x_normalized < 0.2:
+        reward -= paddle_speed_normalized * 5
+
+    if state.ball_vel[0] < 0 and ball_x_normalized >= 0.3:
+        if well_positioned:
+            reward -= paddle_speed_normalized * 18
+        else:
+            reward -= paddle_speed_normalized * 10
 
     if ball_in_pad_range and ball_near_paddle and state.ball_vel[0] < 0:
         ball_going_up = ball_vy < 0
@@ -99,6 +117,8 @@ def reward_function(state):
                 pad_vy_normalized = pad_vy / MAX_VELOCITY
                 velocity_match = 1 - abs(ball_vy_normalized - pad_vy_normalized)
                 reward += velocity_match * 3
+
+    reward -= paddle_speed_normalized * 2
 
     reward += state.score * 0.5
 

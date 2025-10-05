@@ -89,31 +89,41 @@ def make_demo(actor, noise_scale, device):
 
 def evaluate_actor(actor, num_games=100, device="cpu"):
     total_score = 0
-
+    total_reward = 0
+    
     for game in range(num_games):
         state = initialize_state(W_WIDTH, W_HEIGHT)
         buffer = ObservationBuffer([])
         buffer.initialize()
         done = False
-
+        game_reward = 0
+        
         while not done:
             state, done = process_physics(state, NN_DT, W_WIDTH, W_HEIGHT)
             buffer.add(create_observation(state, "left"))
             obs_tensor = buffer.to_tensor().to(device)
-
+            
             with torch.no_grad():
                 action = actor(obs_tensor).item()
-
+            
             action = np.clip(action, -1.0, 1.0)
             state.left_pad_vel[1] = action * PADDLE_VELOCITY_MAX
             state = update_pid(state)
-
+            
+            # Calculate reward for this step
+            reward_ = reward_function(state)
+            game_reward += reward_
+            
             if state.score >= 10:
                 done = True
-
+        
         total_score += state.score
-
-    return total_score / num_games
+        total_reward += game_reward
+    
+    avg_score = total_score / num_games
+    avg_reward = total_reward / num_games
+    
+    return avg_score, avg_reward
 
 
 if __name__ == "__main__":
@@ -136,11 +146,14 @@ if __name__ == "__main__":
             ]
         )
 
-        actor_main = Actor().to(device)
+        # for no cuda: 
+        # map_location=torch.device('cpu')
+
+        actor_main = torch.load("checkpoints/actor_10.00.pt").to(device)
         actor_target = Actor().to(device)
         actor_target.load_state_dict(actor_main.state_dict())
 
-        critic_main = Critic().to(device)
+        critic_main = torch.load("checkpoints/critic_10.00.pt").to(device)
         critic_target = Critic().to(device)
         critic_target.load_state_dict(critic_main.state_dict())
 
@@ -159,7 +172,7 @@ if __name__ == "__main__":
         state = initialize_state(W_WIDTH, W_HEIGHT)
 
         noise_scale = 0.5
-        noise_decay = 0.9995
+        noise_decay = 0.995
         min_noise = 0.01
 
         episode_count = 0
@@ -196,7 +209,7 @@ if __name__ == "__main__":
                     float(done),
                 )
 
-                if step % TRAIN_EVERY == 0:
+                if step % TRAIN_EVERY == 0 and step != 0:
                     losses = train_step(
                         buffer,
                         critic_target,
@@ -238,18 +251,20 @@ if __name__ == "__main__":
 
                 if episode_count % EVAL_EACH == 0:
                     actor_main.eval()
-                    eval_score = evaluate_actor(
+                    avg_score, avg_reward = evaluate_actor(
                         actor_main, num_games=100, device=device
                     )
                     actor_main.train()
+
+                    eval_score = avg_score * avg_reward
 
                     print(f"Evaluation score: {eval_score:.2f}")
 
                     if eval_score > best_eval_score:
                         best_eval_score = eval_score
-                        torch.save(actor_main, f"checkpoints/actor_{eval_score:.2f}.pt")
+                        torch.save(actor_main, f"checkpoints/{EXPNAME}_actor_{eval_score:.2f}.pt")
                         torch.save(
-                            critic_main, f"checkpoints/critic_{eval_score:.2f}.pt"
+                            critic_main, f"checkpoints/{EXPNAME}_critic_{eval_score:.2f}.pt"
                         )
                         print(f" Saved checkpoint: {eval_score:.2f} ***\n")
                     else:
